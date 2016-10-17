@@ -104,7 +104,7 @@ public class BooleanFormulaParser {
                     negating = !negating;
                     break;
                 default:
-                    // this check is not even needed but let's be safe
+                    // Getting here implies c is a variable
                     node = addNode(node, vManager.getNodeFor(c));
                     break;
             }

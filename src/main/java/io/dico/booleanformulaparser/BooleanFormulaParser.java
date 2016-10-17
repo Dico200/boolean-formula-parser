@@ -1,34 +1,44 @@
 package io.dico.booleanformulaparser;
 
-import io.dico.booleanformulaparser.node.ConjunctedNode;
-import io.dico.booleanformulaparser.node.DisjunctedNode;
-import io.dico.booleanformulaparser.node.NegatedNode;
-import io.dico.booleanformulaparser.node.Node;
-import io.dico.booleanformulaparser.node.VariableManager;
+import gnu.trove.map.TCharObjectMap;
+import gnu.trove.map.hash.TCharObjectHashMap;
+import io.dico.booleanformulaparser.node.*;
 
-import java.util.Collection;
-import java.util.LinkedList;
-import java.util.List;
+import java.util.*;
 
 public class BooleanFormulaParser {
 
     private static final char symbol_AND = '^';
     private static final char symbol_OR = 'v';
+    private static final char symbol_IMPLIES = '→';
+    private static final char symbol_REVERSE_IMPLIES = '←';
     private static final char symbol_NOT = '¬';
+
+    private static final TCharObjectMap<NodeReducer> reducers = new TCharObjectHashMap<NodeReducer>() {
+        {
+            put(symbol_AND, ConjunctedNode::new);
+            put(symbol_OR, DisjunctedNode::new);
+            put(symbol_IMPLIES, ImpliedNode::new);
+            put(symbol_REVERSE_IMPLIES, ReverseImpliedNode::new);
+            put('\0', (n1, n2) -> {
+                throw new IllegalFormulaException();
+            });
+        }
+    };
 
     private final char[] formula;
     private final VariableManager vManager;
 
     public BooleanFormulaParser(String formula) {
         List<Character> chars = new LinkedList<>();
-        List<Character> variables = new LinkedList<>();
+        Set<Character> variables = new LinkedHashSet<>();
 
         chars.add('(');
         for (char c : formula.toCharArray()) {
             if ("ABCDEFGHIJKLMNOPQRSTUVWXYZ".indexOf(c) >= 0) {
                 chars.add(c);
                 variables.add(c);
-            } else if (c == '(' || c == ')' || c == symbol_AND || c == symbol_NOT || c == symbol_OR) {
+            } else if (c == '(' || c == ')' || c == symbol_NOT || (c != '\0' && reducers.containsKey(c))) {
                 chars.add(c);
             }
         }
@@ -60,48 +70,43 @@ public class BooleanFormulaParser {
 
     private int index = 0;
     private boolean negating = false;
-    private boolean conjuncting = false;
-    private boolean disjuncting = false;
+    private char operation = '\0';
 
     private Node readSection() {
         Node node = null;
 
         while (true) {
-            char c = nextChar();
+            final char c = nextChar();
 
-            if (c == '(') {
+            switch (c) {
+                case '(': {
+                    boolean negatingSnapshot = negating;
+                    char operationSnapshot = operation;
+                    negating = false;
+                    operation = '\0';
+                    Node toAdd = readSection();
 
-                boolean negating = this.negating;
-                boolean conjuncting = this.conjuncting;
-                boolean disjuncting = this.disjuncting;
-                this.negating = false;
-                this.conjuncting = false;
-                this.disjuncting = false;
-                Node toAdd = readSection();
-
-                this.negating = negating;
-                this.conjuncting = conjuncting;
-                this.disjuncting = disjuncting;
-                node = addNode(node, toAdd);
-
-            } else if (c == ')') {
-                return node;
-            } else if (c == symbol_AND) {
-                if (node == null || conjuncting || disjuncting) {
-                    throw new IllegalFormulaException();
+                    negating = negatingSnapshot;
+                    operation = operationSnapshot;
+                    node = addNode(node, toAdd);
+                    break;
                 }
-                conjuncting = true;
-            } else if (c == symbol_OR) {
-                if (node == null || disjuncting || conjuncting) {
-                    throw new IllegalFormulaException();
-                }
-                disjuncting = true;
-            } else if (c == symbol_NOT) {
-                negating = !negating;
-            } else if (vManager.isVariable(c)) {
-                node = addNode(node, vManager.getNodeFor(c));
-            } else {
-                //skip
+                case ')':
+                    return node;
+                case symbol_AND:
+                case symbol_OR:
+                case symbol_IMPLIES:
+                case symbol_REVERSE_IMPLIES:
+                    checkNewOperationValid(node);
+                    operation = c;
+                    break;
+                case symbol_NOT:
+                    negating = !negating;
+                    break;
+                default:
+                    // this check is not even needed but let's be safe
+                    node = addNode(node, vManager.getNodeFor(c));
+                    break;
             }
         }
     }
@@ -115,14 +120,9 @@ public class BooleanFormulaParser {
 
         if (current == null) {
             result = toAdd;
-        } else if (conjuncting) {
-            result = new ConjunctedNode(current, toAdd);
-            conjuncting = false;
-        } else if (disjuncting) {
-            result = new DisjunctedNode(current, toAdd);
-            disjuncting = false;
         } else {
-            throw new IllegalFormulaException();
+            result = reducers.get(operation).reduce(current, toAdd);
+            operation = '\0';
         }
 
         return result;
@@ -135,6 +135,12 @@ public class BooleanFormulaParser {
             ret[index++] = c;
         }
         return ret;
+    }
+
+    private void checkNewOperationValid(Node node) {
+        if (node == null || operation != '\0') {
+            throw new IllegalFormulaException();
+        }
     }
 
 }

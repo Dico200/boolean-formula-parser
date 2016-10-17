@@ -19,4 +19,19 @@
         <maven.compiler.target>1.8</maven.compiler.target>
     </properties>
 
+    <dependencies>
+        <dependency>
+            <groupId>net.sf.trove4j</groupId>
+            <artifactId>trove4j</artifactId>
+            <version>3.0.3</version>
+        </dependency>
+    </dependencies>
+
+    <repositories>
+        <repository>
+            <id>trove-repo</id>
+            <url>https://mvnrepository.com/artifact/net.sf.trove4j/trove4j/</url>
+        </repository>
+    </repositories>
+
 </project>
